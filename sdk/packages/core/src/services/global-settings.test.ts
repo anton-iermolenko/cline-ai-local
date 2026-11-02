@@ -28,6 +28,27 @@ import {
 } from "./global-settings";
 
 describe("global-settings", () => {
+	it("preserves the independent draft chunk limit across unrelated settings updates", async () => {
+		const root = await mkdtemp(join(tmpdir(), "core-editor-settings-"));
+		try {
+			process.env.CLINE_GLOBAL_SETTINGS_PATH = join(root, "settings.json");
+			writeGlobalSettings({
+				fileEditor: { maxChars: 100, draftChunkChars: 12000 },
+			});
+			setPlanActModeGlobally("act");
+			expect(readGlobalSettings().fileEditor).toEqual({
+				maxChars: 100,
+				draftChunkChars: 12000,
+			});
+			for (const draftChunkChars of [0, -1, 1.5, 16777217])
+				expect(
+					GlobalSettingsSchema.safeParse({ fileEditor: { draftChunkChars } })
+						.success,
+				).toBe(false);
+		} finally {
+			await rm(root, { recursive: true, force: true });
+		}
+	});
 	it("persists moving compaction targets through other settings updates", async () => {
 		const root = await mkdtemp(join(tmpdir(), "core-compaction-settings-"));
 		try {

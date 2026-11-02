@@ -59,22 +59,30 @@ Merge a `fileEditor` object into shared Cline global settings:
 {
   "fileEditor": {
     "maxChars": 50000,
+    "draftChunkChars": 8000,
     "advertiseLengthBounds": true,
     "lockTimeoutMs": 15000
   }
 }
 ```
 
-`maxChars` applies independently to inline old/new text. It does not increase the
-model's output-token budget. Set `advertiseLengthBounds=false` only when working
+`maxChars` applies independently to inline old/new text. `draftChunkChars` sets
+the maximum content length per draft chunk, independently of `maxChars`, and
+defaults to 8,000 characters. Neither setting increases the model's output-token
+budget. Set `advertiseLengthBounds=false` only when working
 around slow bounded-string grammar generation; runtime limits remain enforced.
 Rebuild the session's toolset after changing these settings. SDK hosts can pass
 `executorOptions.fileEditor`, including trusted filesystem roots, or override
 `ToolExecutors.fileEditor` for a different execution host.
 
-The complete file is limited to 16 MiB. Draft chunks are at most 4,000 characters
-(or the configured field limit if lower), with eight drafts and 16 MiB of staged
-content per editor context. Drafts expire after 30 idle minutes and are scoped
+The complete file is limited to 16 MiB, with eight drafts and 16 MiB of staged
+content per editor context. `draftChunkChars` accepts integers from 1 through
+16,777,216; the byte storage limit still applies. Character limits count UTF-16
+code units, and chunks must contain complete Unicode characters. Draft creation
+and acknowledgements return the effective `max_chunk_chars`. Oversize errors
+report the received length, limit and next chunk index without changing accepted
+content. The draft content schema retains its existing behavior without a
+`maxLength` constraint. Drafts expire after 30 idle minutes and are scoped
 to conversation, agent and workspace. Session/runtime recreation may discard
 drafts; finalize and apply within the same session.
 

@@ -100,6 +100,12 @@ export const GlobalSettingsSchema = z
 					.max(16 * 1024 * 1024)
 					.optional(),
 				advertiseLengthBounds: z.boolean().optional(),
+				draftChunkChars: z
+					.number()
+					.int()
+					.positive()
+					.max(16 * 1024 * 1024)
+					.optional(),
 				lockTimeoutMs: z.number().int().positive().max(30000).optional(),
 			})
 			.optional(),
@@ -124,6 +130,7 @@ export const GlobalSettingsSchema = z
 
 			fileEditor?: {
 				maxChars?: number;
+				draftChunkChars?: number;
 				advertiseLengthBounds?: boolean;
 				lockTimeoutMs?: number;
 			};

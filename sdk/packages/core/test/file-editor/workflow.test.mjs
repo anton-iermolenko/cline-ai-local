@@ -287,7 +287,7 @@ test("drafts acknowledge ordered chunks, retry safely, and finalize only an agre
 });
 
 test("draft limits and malformed chunks preserve acknowledged state", () => {
-	const store = createDraftStore({ maxChars: 10 });
+	const store = createDraftStore({ draftChunkChars: 10 });
 	const created = store.handle({ action: "create" });
 	for (const content of ["x".repeat(11), "\0", "\ud83d"])
 		assert.throws(
@@ -298,7 +298,7 @@ test("draft limits and malformed chunks preserve acknowledged state", () => {
 					chunk_index: 0,
 					content,
 				}),
-			/content must/,
+			/Received 11 characters; maximum 10|content must/,
 		);
 	store.handle({
 		action: "finalize",
@@ -313,6 +313,78 @@ test("draft limits and malformed chunks preserve acknowledged state", () => {
 	store.handle({ action: "discard", id: created.id });
 	assert.throws(() => store.resolve(created.id), /not found/);
 	assert.ok(store.handle({ action: "create" }).id);
+});
+
+test("draft chunk limits default to 8000 and can be configured above or below it", () => {
+	for (const draftChunkChars of [undefined, 10, 12000]) {
+		const limit = draftChunkChars ?? 8000;
+		const store = createDraftStore({ draftChunkChars });
+		const created = store.handle({ action: "create" });
+		assert.equal(created.max_chunk_chars, limit);
+		const content = "x".repeat(limit);
+		const first = store.handle({
+			action: "append",
+			id: created.id,
+			chunk_index: 0,
+			content,
+		});
+		assert.equal(first.max_chunk_chars, limit);
+		assert.throws(
+			() =>
+				store.handle({
+					action: "append",
+					id: created.id,
+					chunk_index: 1,
+					content: content + "x",
+				}),
+			(error) => {
+				assert.equal(
+					error.message,
+					`Received ${limit + 1} characters; maximum ${limit}. Nothing was appended. Resend smaller chunks starting at index 1.`,
+				);
+				assert.deepEqual(error.diagnostics, {
+					actual_chars: limit + 1,
+					max_chunk_chars: limit,
+					next_chunk_index: 1,
+				});
+				return true;
+			},
+		);
+		assert.deepEqual(store.describe(), [
+			{
+				...created,
+				sha256: sha(content),
+				chars: limit,
+				bytes: limit,
+				next_chunk_index: 1,
+				expires_at: first.expires_at,
+			},
+		]);
+		store.handle({
+			action: "finalize",
+			id: created.id,
+			chunk_count: 1,
+			expected_sha256: first.sha256,
+		});
+		assert.equal(store.resolve(created.id), content);
+	}
+});
+
+test("invalid chunk configuration is rejected before creating a draft store", () => {
+	for (const draftChunkChars of [
+		0,
+		-1,
+		1.5,
+		NaN,
+		Infinity,
+		16777217,
+		"8000",
+		null,
+	])
+		assert.throws(
+			() => createDraftStore({ draftChunkChars }),
+			/draftChunkChars must be an integer between 1 and 16777216/,
+		);
 });
 
 test("draft expiry uses idle time and releases slots", () => {

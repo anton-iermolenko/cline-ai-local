@@ -797,6 +797,11 @@ draft application/creation. The engine is transport-independent and bundled
 into SDK consumers; it does not require an MCP process. Draft stores are scoped
 to conversation/agent/workspace and do not survive runtime recreation.
 
+`fileEditor.draftChunkChars` sets the per-chunk content limit (8,000 characters
+by default), independently of the inline `maxChars` limit. Draft creation and
+acknowledgements return `max_chunk_chars`; oversized chunks report the actual
+length, limit and next index while preserving accepted content.
+
 VS Code uses the same executor for preview and commit, including staged content,
 with a preview-snapshot hash guard. Native approval, run checkpoint and activity
 tracking paths handle the write tools. The former low-level `EditorExecutor`

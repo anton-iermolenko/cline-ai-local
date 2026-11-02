@@ -69,6 +69,23 @@ describe("native file editor family", () => {
 			required: ["path", "new_text"],
 			properties: { new_text: { maxLength: 50000 } },
 		});
+		const append = tools.find((tool) => tool.name === "draft_append")!;
+		expect(append.description).toContain(
+			"Maximum content length: 8000 characters",
+		);
+		expect(append.inputSchema).toMatchObject({
+			properties: {
+				content: {
+					description: expect.stringContaining(
+						"Maximum content length: 8000 characters",
+					),
+				},
+			},
+		});
+		expect(
+			(append.inputSchema as { properties: { content: object } }).properties
+				.content,
+		).not.toHaveProperty("maxLength");
 		expect(
 			tools.find((tool) => tool.name === "apply_draft")?.inputSchema,
 		).toMatchObject({
@@ -103,13 +120,14 @@ describe("native file editor family", () => {
 		await writeFile(file, "old\ntail\n");
 		const before = await call("read_file", { path: file });
 		const draft = await call("draft_create");
-		const content = 'new "quoted" $& data\n'.repeat(300);
+		expect(draft.max_chunk_chars).toBe(8000);
+		const content = 'new "quoted" $& data\n'.repeat(500);
 		let latest = draft;
-		for (let index = 0; index * 3000 < content.length; index++)
+		for (let index = 0; index * 8000 < content.length; index++)
 			latest = await call("draft_append", {
 				id: draft.id,
 				chunk_index: index,
-				content: content.slice(index * 3000, (index + 1) * 3000),
+				content: content.slice(index * 8000, (index + 1) * 8000),
 			});
 		expect(await readFile(file, "utf8")).toBe("old\ntail\n");
 		await expect(
@@ -145,6 +163,77 @@ describe("native file editor family", () => {
 			expected_sha256: fresh.sha256,
 		});
 		expect(await readFile(file, "utf8")).toBe(content + "tail\n");
+	});
+	it("uses configured chunk limits independently of inline limits and recovers without losing accepted content", async () => {
+		const dir = await workspace();
+		vi.stubEnv("CLINE_GLOBAL_SETTINGS_PATH", join(dir, "settings.json"));
+		await writeFile(
+			join(dir, "settings.json"),
+			JSON.stringify({
+				fileEditor: { maxChars: 100, draftChunkChars: 6000 },
+			}),
+		);
+		const { tools, call } = family(dir);
+		expect(
+			tools.find((tool) => tool.name === "draft_append")!.description,
+		).toContain("Maximum content length: 6000 characters");
+		const draft = await call("draft_create");
+		expect(draft.max_chunk_chars).toBe(6000);
+		const chunk = { id: draft.id, chunk_index: 0, content: "x".repeat(6000) };
+		const first = await call("draft_append", chunk);
+		expect(first.max_chunk_chars).toBe(6000);
+		try {
+			await call("draft_append", {
+				id: draft.id,
+				chunk_index: 1,
+				content: "x".repeat(6001),
+			});
+			throw new Error("Expected oversized chunk rejection");
+		} catch (error) {
+			expect(JSON.parse((error as Error).message)).toMatchObject({
+				code: "draft_chunk_too_large",
+				error:
+					"Received 6001 characters; maximum 6000. Nothing was appended. Resend smaller chunks starting at index 1.",
+				diagnostics: {
+					actual_chars: 6001,
+					max_chunk_chars: 6000,
+					next_chunk_index: 1,
+				},
+				recovery: {
+					active_drafts: [
+						{
+							id: draft.id,
+							sha256: first.sha256,
+							chars: 6000,
+							max_chunk_chars: 6000,
+							next_chunk_index: 1,
+						},
+					],
+					example_arguments: { id: draft.id, chunk_index: 1 },
+				},
+			});
+		}
+		expect(await call("draft_append", chunk)).toEqual({
+			...first,
+			replayed: true,
+		});
+		const latest = await call("draft_append", {
+			id: draft.id,
+			chunk_index: 1,
+			content: "\ntail\n",
+		});
+		await call("draft_finalize", {
+			id: draft.id,
+			chunk_count: latest.next_chunk_index,
+			expected_sha256: latest.sha256,
+		});
+		await call("create_from_draft", {
+			path: "large.txt",
+			new_text_ref: draft.id,
+		});
+		expect(await readFile(join(dir, "large.txt"), "utf8")).toBe(
+			chunk.content + "\ntail\n",
+		);
 	});
 	it("keeps drafts isolated by agent and conversation", async () => {
 		const dir = await workspace(),
