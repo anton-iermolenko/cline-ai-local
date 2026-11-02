@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 const MAX_BYTES = 16 * 1024 * 1024;
 const TTL_MS = 30 * 60 * 1000;
+const DEFAULT_DRAFT_CHUNK_CHARS = 8000;
 const digest = (text) => createHash("sha256").update(text).digest("hex");
 
 export function draftTools(chunkChars) {
@@ -36,9 +37,9 @@ export function draftTools(chunkChars) {
 		),
 		tool(
 			"draft_append",
-			"Append ONE ordered content chunk, at most " +
+			"Maximum content length: " +
 				chunkChars +
-				" characters. REQUIRED: id, chunk_index, content. Copy id from draft_create and chunk_index from next_chunk_index. Wait for the acknowledgement before the next chunk. Identical retries at the same index are safe. Include needed newlines; no separator is added. Keep each complete JSON call within the output budget. This does not edit a file. Finalize-only fields are not accepted here.",
+				" characters. Append ONE ordered content chunk. REQUIRED: id, chunk_index, content. Copy id from draft_create and chunk_index from next_chunk_index. Wait for the acknowledgement before the next chunk. Identical retries at the same index are safe. Include needed newlines; no separator is added. Keep each complete JSON call within the output budget. This does not edit a file. Finalize-only fields are not accepted here.",
 			{
 				id,
 				chunk_index: {
@@ -50,9 +51,9 @@ export function draftTools(chunkChars) {
 				content: {
 					type: "string",
 					description:
-						"One complete chunk, at most " +
+						"Maximum content length: " +
 						chunkChars +
-						" characters. Quotes still need JSON escaping.",
+						" characters. One complete chunk. Quotes still need JSON escaping.",
 				},
 			},
 		),
@@ -83,11 +84,17 @@ export function draftTools(chunkChars) {
 }
 
 export function createDraftStore({
-	maxChars,
+	draftChunkChars = DEFAULT_DRAFT_CHUNK_CHARS,
 	ttlMs = TTL_MS,
 	now = Date.now,
 } = {}) {
-	const chunkChars = Math.min(maxChars ?? 50000, 4000);
+	if (
+		!Number.isSafeInteger(draftChunkChars) ||
+		draftChunkChars < 1 ||
+		draftChunkChars > MAX_BYTES
+	)
+		throw Error("draftChunkChars must be an integer between 1 and 16777216.");
+	const chunkChars = draftChunkChars;
 	const drafts = new Map();
 	let storedBytes = 0;
 	function remove(id) {
@@ -115,6 +122,7 @@ export function createDraftStore({
 			chars: draft.chars,
 			bytes: draft.bytes,
 			next_chunk_index: draft.chunks.length,
+			max_chunk_chars: chunkChars,
 			finalized: draft.finalized,
 			expires_at: new Date(draft.expires).toISOString(),
 		};
@@ -183,15 +191,30 @@ export function createDraftStore({
 					throw Error("chunk_index must be a nonnegative integer.");
 				if (
 					typeof input.content !== "string" ||
-					input.content.length > chunkChars ||
 					input.content.includes("\0") ||
 					!input.content.isWellFormed()
 				)
 					throw Error(
-						"content must be a NUL-free, well-formed Unicode string of at most " +
-							chunkChars +
-							" characters. Split into smaller complete calls without splitting surrogate pairs.",
+						"content must be a NUL-free, well-formed Unicode string. Do not split surrogate pairs between chunks.",
 					);
+				if (input.content.length > chunkChars) {
+					const error = Error(
+						"Received " +
+							input.content.length +
+							" characters; maximum " +
+							chunkChars +
+							". Nothing was appended. Resend smaller chunks starting at index " +
+							draft.chunks.length +
+							".",
+					);
+					error.code = "draft_chunk_too_large";
+					error.diagnostics = {
+						actual_chars: input.content.length,
+						max_chunk_chars: chunkChars,
+						next_chunk_index: draft.chunks.length,
+					};
+					throw error;
+				}
 				const existing = draft.chunks[input.chunk_index];
 				if (existing) {
 					if (existing.content !== input.content)

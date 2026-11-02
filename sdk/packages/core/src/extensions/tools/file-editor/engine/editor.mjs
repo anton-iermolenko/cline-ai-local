@@ -464,13 +464,14 @@ function diffSummary(oldText, newText) {
 export function fileEditorToolDefinitions(
 	maxChars = DEFAULT_MAX_CHARS,
 	advertiseLengthBounds = true,
+	draftChunkChars,
 ) {
 	return [
 		editorTool(maxChars, advertiseLengthBounds),
 		readTool(),
 		applyDraftTool(maxChars, advertiseLengthBounds),
 		createFromDraftTool(maxChars, advertiseLengthBounds),
-		...createDraftStore({ maxChars }).tools,
+		...createDraftStore({ draftChunkChars }).tools,
 	];
 }
 
@@ -490,8 +491,12 @@ export async function createEditor(options = {}) {
 	);
 	const roots = await Promise.all((options.roots ?? []).map(canonicalPath));
 	const queues = new Map();
-	const drafts = createDraftStore({ maxChars });
-	const tools = fileEditorToolDefinitions(maxChars, advertiseLengthBounds);
+	const drafts = createDraftStore({ draftChunkChars: options.draftChunkChars });
+	const tools = fileEditorToolDefinitions(
+		maxChars,
+		advertiseLengthBounds,
+		options.draftChunkChars,
+	);
 	const properties = {
 		...editorTool(maxChars).inputSchema.properties,
 		new_text_ref: { type: "string" },

@@ -20,9 +20,11 @@ export const DEFAULT_MAX_CHARS: number;
 export function fileEditorToolDefinitions(
 	maxChars?: number,
 	advertiseLengthBounds?: boolean,
+	draftChunkChars?: number,
 ): EngineTool[];
 export function createEditor(options?: {
 	maxChars?: number;
+	draftChunkChars?: number;
 	roots?: string[];
 	advertiseLengthBounds?: boolean;
 	lockTimeoutMs?: number;

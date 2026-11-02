@@ -29,6 +29,7 @@ export const FILE_EDITOR_WRITE_TOOLS = [
 ] as const;
 export interface FileEditorOptions {
 	maxChars?: number;
+	draftChunkChars?: number;
 	advertiseLengthBounds?: boolean;
 	lockTimeoutMs?: number;
 	/** Trusted host-only roots; paths are resolved before containment checks. */
@@ -164,6 +165,7 @@ export function createFileEditorTools(
 	return fileEditorToolDefinitions(
 		options.maxChars ?? 50_000,
 		options.advertiseLengthBounds ?? true,
+		options.draftChunkChars,
 	).map((definition) =>
 		createTool({
 			name: definition.name,
