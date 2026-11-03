@@ -84,15 +84,58 @@ test("omitting advertised maxLength preserves runtime limits and failed-edit saf
 	assert.equal(await fs.readFile(file, "utf8"), "x".repeat(7000));
 });
 
+test("missing files accept omitted, null, or empty old_text in previews and writes", async (t) => {
+	const { editor, root } = await fixture(t);
+	for (const [index, args] of [
+		{},
+		{ old_text: null },
+		{ old_text: "" },
+	].entries()) {
+		for (const text of ["created\n", ""]) {
+			const file = path.join(root, `${index}-${text.length}.txt`);
+			const input = { path: file, new_text: text, ...args };
+			const preview = await editor.preview("editor", input);
+			assert.equal(preview.operation, "create");
+			assert.equal(preview.original_text, "");
+			assert.equal(preview.new_text, text);
+			await assert.rejects(fs.access(file), { code: "ENOENT" });
+			const created = await editor.call("editor", input);
+			assert.equal(created.operation, "create");
+			assert.equal(created.sha256, sha(text));
+			assert.equal(await fs.readFile(file, "utf8"), text);
+		}
+	}
+});
+
+test("missing files still reject replacement text and edit selectors", async (t) => {
+	const { editor, file } = await fixture(t);
+	for (const args of [
+		{ old_text: "existing text" },
+		{ old_text: " " },
+		{ old_text: "", insert_line: 1 },
+		{ old_text: "", append: true },
+	]) {
+		const input = { path: file, new_text: "oops", ...args };
+		const expected = /File does not exist|Choose one of/;
+		await assert.rejects(editor.preview("editor", input), expected);
+		await assert.rejects(editor.call("editor", input), expected);
+		await assert.rejects(fs.access(file), { code: "ENOENT" });
+	}
+});
+
 test("existing file is never overwritten by omitted/null/empty old_text", async (t) => {
 	const { editor, file } = await fixture(t);
-	await fs.writeFile(file, "preserve");
-	for (const args of [{}, { old_text: null }, { old_text: "" }]) {
-		await assert.rejects(
-			editor.edit({ path: file, new_text: "oops", ...args }),
-			/Existing file requires/,
-		);
-		assert.equal(await fs.readFile(file, "utf8"), "preserve");
+	for (const text of ["preserve", ""]) {
+		await fs.writeFile(file, text);
+		for (const args of [{}, { old_text: null }, { old_text: "" }]) {
+			const input = { path: file, new_text: "oops", ...args };
+			await assert.rejects(
+				editor.preview("editor", input),
+				/Existing file requires/,
+			);
+			await assert.rejects(editor.edit(input), /Existing file requires/);
+			assert.equal(await fs.readFile(file, "utf8"), text);
+		}
 	}
 });
 
