@@ -53,7 +53,7 @@ export function editorTool(
 					type: ["string", "null"],
 					...(advertiseLengthBounds ? { maxLength: maxChars } : {}),
 					description:
-						"Exact text to replace; must match exactly once. Read first. Omit for creation, insertion, or append.",
+						"Exact text to replace; must be nonempty and match exactly once in an existing file. Read first. For creation, omit or use null or an empty string. Omit for insertion or append.",
 				},
 				insert_line: {
 					type: ["integer", "string", "null"],
@@ -313,7 +313,7 @@ export const lineCount = (text) =>
 function updatedText(before, input) {
 	if (!before) {
 		if (
-			input.old_text != null ||
+			(input.old_text != null && input.old_text !== "") ||
 			input.insert_line != null ||
 			input.start_line != null ||
 			input.append ||

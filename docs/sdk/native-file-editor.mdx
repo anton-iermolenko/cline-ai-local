@@ -32,6 +32,9 @@ using `editor` with `start_line`, `end_line`, `expected_sha256` and `new_text`.
 This avoids reproducing quote-heavy old content. The verified empty-file range
 is `start_line=1,end_line=0`.
 
+To create a missing file, provide `path` and `new_text`; `old_text` may be omitted,
+`null`, or `""`. Empty `old_text` does not authorize overwriting an existing file.
+
 Inline `old_text` replacement requires exactly one match. Empty `new_text` deletes
 the match or selected lines; omitted content is never inferred. Creation refuses
 an existing target. Insertion uses one-based physical line boundaries, with

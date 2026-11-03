@@ -98,6 +98,32 @@ describe("native file editor family", () => {
 			],
 		});
 	});
+	it("creates a missing file with empty old_text using the same preview and commit", async () => {
+		const dir = await workspace();
+		const execute = createFileEditorExecutor();
+		const input = { path: "new.txt", old_text: "", new_text: "created\n" };
+		const preview = await execute(
+			"preview",
+			{ tool: "editor", arguments: input },
+			dir,
+			context,
+		);
+		expect(preview).toMatchObject({
+			operation: "create",
+			original_text: "",
+			new_text: input.new_text,
+		});
+		await expect(access(join(dir, input.path))).rejects.toThrow();
+		const result = await execute("editor", input, dir, context);
+		expect(result).toMatchObject({ success: true, operation: "create" });
+		expect(await readFile(join(dir, input.path), "utf8")).toBe(
+			preview.new_text,
+		);
+		await expect(
+			execute("editor", { ...input, new_text: "oops" }, dir, context),
+		).rejects.toThrow("Existing file requires nonempty old_text");
+		expect(await readFile(join(dir, input.path), "utf8")).toBe(input.new_text);
+	});
 	it("writes a complete inline payload above the former 6K guard and returns the saved-byte hash", async () => {
 		const dir = await workspace(),
 			{ call } = family(dir),
